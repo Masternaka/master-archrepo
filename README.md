@@ -1,30 +1,11 @@
 # master-archrepo
 
-Dépôt personnel Arch Linux destiné à installer et mettre à jour les applications de **Masternaka** sur Omarchy avec pacman.
+Dépôt pacman personnel pour **CachyOS x86_64**. Le workflow GitHub Actions suit les pushes validés par la CI et publie les paquets signés sur GitHub Pages. Une fois le dépôt activé, CachyOS peut les installer et les mettre à jour directement avec pacman.
 
-Chaque application conserve son dépôt de code et sa chaîne de construction. `master-archrepo` centralisera les paquets sélectionnés, leurs signatures et la base de données utilisée par pacman.
+Le catalogue initial contient **SambaPilot** et **DotfilePilot**. Les deux paquets `any` proviennent de builds vérifiés dans des conteneurs Arch. Le [guide d’activation du dépôt public](docs/publication-github.md) décrit la configuration et l’installation. Le [guide local](docs/preparation-et-activation.md) documente aussi l’assemblage sur une seule machine.
 
-## État actuel
-
-Le dépôt contient la documentation de préparation. **Il n’est pas encore un dépôt pacman utilisable** : les scripts de collecte, la génération de la base, la signature et le workflow de publication restent à développer. Aucun réglage GitHub, déploiement Pages ou accès depuis Omarchy n’a été validé dans cette revue locale du 9 novembre 2026.
-
-SambaPilot dispose, dans son propre dépôt, d’une préparation de construction de paquet Arch via GitHub Actions. Une première construction réussie reste à confirmer. Ces artefacts temporaires ne constituent pas encore une publication dans `master-archrepo`.
-
-## Marche à suivre
-
-Le [guide de préparation et d’activation](docs/preparation-et-activation.md) décrit :
-
-1. Les fichiers et mécanismes à développer avant activation.
-2. La clé de signature et les réglages GitHub à préparer.
-3. La première publication et les contrôles nécessaires.
-4. L’ajout du dépôt sur Omarchy, l’installation et les mises à jour.
-5. L’ajout d’autres applications et le retrait du dépôt.
-
-La configuration prévue sur Omarchy utilisera la section `[master-archrepo]`. Une fois le dépôt réellement publié et sa clé vérifiée, le parcours cible sera :
+Une fois le dépôt activé, les deux applications s’installent avec cette commande.
 
 ```sh
-sudo pacman -Syu master-archrepo/sambapilot
-sudo pacman -Syu
+sudo pacman -Syu master-archrepo/sambapilot master-archrepo/dotfilepilot
 ```
-
-Ces commandes sont des exemples pour une installation future. La seconde met à jour tout le système, y compris les applications personnelles installées. Aucun script de cette documentation n’est exécuté automatiquement, et aucune installation ou modification de machine n’a été réalisée.

@@ -1,0 +1,16 @@
+[
+  {
+    "name": "sambapilot",
+    "repository": "Masternaka/Sambapilot",
+    "version": "0.1.0.dev0-7",
+    "arch": "any",
+    "sha256": "6caefaef198a719cfb84e164d654684c389272d73db5754877b94680b3e8985e"
+  },
+  {
+    "name": "dotfilepilot",
+    "repository": "Masternaka/Dotfilepilot",
+    "version": "0.1.0.dev0-5",
+    "arch": "any",
+    "sha256": "e84e91bc8c4d5cdccd5a917c71cbfee53397bbc31402192b9e7bf3d4e7a30c6c"
+  }
+]

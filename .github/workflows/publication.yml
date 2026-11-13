@@ -1,0 +1,129 @@
+name: Publier les paquets Arch
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17,47 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: depot-pacman
+  cancel-in-progress: false
+
+jobs:
+  publier:
+    if: github.ref == 'refs/heads/main' && vars.ARCH_SIGNING_KEY_FINGERPRINT != ''
+    outputs:
+      deployer: ${{ steps.pages.outputs.deployer }}
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Installer les outils Arch
+        run: pacman -Syu --noconfirm --needed git github-cli python gnupg curl
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Collecter les paquets des derniers pushes validés
+        id: collecte
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCH_CI_READ_TOKEN: ${{ secrets.ARCH_CI_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          gh auth setup-git
+          mkdir "$RUNNER_TEMP/precedent"
+          previous="$(git ls-remote --heads origin refs/heads/paquets)"
+          if [[ -n "$previous" ]]; then
+            git fetch --depth=1 origin refs/heads/paquets
+            git archive FETCH_HEAD | tar -xf - -C "$RUNNER_TEMP/precedent"
+          fi
+          python3 scripts/collect-ci.py catalogue.json "$RUNNER_TEMP/precedent" "$RUNNER_TEMP/collecte"
+          if ! cmp -s "$RUNNER_TEMP/precedent/catalogue.json" "$RUNNER_TEMP/collecte/catalogue.json"; then
+            echo 'nouveau=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Signer et vérifier le dépôt
+        if: steps.collecte.outputs.nouveau == 'true'
+        shell: bash
+        env:
+          ARCH_SIGNING_PRIVATE_KEY: ${{ secrets.ARCH_SIGNING_PRIVATE_KEY }}
+          ARCH_SIGNING_PASSPHRASE: ${{ secrets.ARCH_SIGNING_PASSPHRASE }}
+          ARCH_SIGNING_KEY_FINGERPRINT: ${{ vars.ARCH_SIGNING_KEY_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          export GNUPGHOME
+          GNUPGHOME="$(mktemp -d)"
+          trap 'gpgconf --kill gpg-agent; rm -rf -- "$GNUPGHOME"' EXIT
+          printf '%s\n' "$ARCH_SIGNING_PRIVATE_KEY" | gpg --batch --import
+          unset ARCH_SIGNING_PRIVATE_KEY
+          python3 scripts/assemble.py --catalogue "$RUNNER_TEMP/collecte/catalogue.json" \
+            --local-packages "$RUNNER_TEMP/collecte/paquets" --output "$RUNNER_TEMP/site"
+          cp "$RUNNER_TEMP/collecte/catalogue.json" "$RUNNER_TEMP/site/"
+          cp docs/index.html "$RUNNER_TEMP/site/"
+          python3 scripts/retain-previous.py "$RUNNER_TEMP/precedent" "$RUNNER_TEMP/site"
+      - name: Conserver les paquets signés sur GitHub
+        if: steps.collecte.outputs.nouveau == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          index="$(mktemp -d)"
+          export GIT_INDEX_FILE="$index/index"
+          git --work-tree="$RUNNER_TEMP/site" add -f --all
+          tree="$(git write-tree)"
+          parent=()
+          if git rev-parse --verify --quiet FETCH_HEAD >/dev/null; then
+            parent=(-p FETCH_HEAD)
+          fi
+          commit="$(git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit-tree "$tree" "${parent[@]}" -m 'Actualiser les paquets Arch signés')"
+          git push origin "$commit:refs/heads/paquets"
+
+      - name: Vérifier si Pages sert déjà cette version
+        id: pages
+        shell: bash
+        env:
+          NOUVEAU: ${{ steps.collecte.outputs.nouveau }}
+        run: |
+          set -euo pipefail
+          if [[ "$NOUVEAU" != true ]]; then
+            mv "$RUNNER_TEMP/precedent" "$RUNNER_TEMP/site"
+          fi
+          if curl --fail --silent --max-time 20 \
+              'https://masternaka.github.io/master-archrepo/x86_64/master-archrepo.db.sig' \
+              -o "$RUNNER_TEMP/publique.sig" && \
+              cmp -s "$RUNNER_TEMP/publique.sig" "$RUNNER_TEMP/site/x86_64/master-archrepo.db.sig" && \
+              curl --fail --silent --max-time 20 \
+              'https://masternaka.github.io/master-archrepo/x86_64/master-archrepo.db' \
+              -o "$RUNNER_TEMP/publique.db" && \
+              cmp -s "$RUNNER_TEMP/publique.db" "$RUNNER_TEMP/site/x86_64/master-archrepo.db"; then
+            exit 0
+          fi
+          echo 'deployer=true' >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-pages-artifact@v4
+        if: steps.pages.outputs.deployer == 'true'
+        with:
+          path: ${{ runner.temp }}/site
+
+  deploiement:
+    if: needs.publier.outputs.deployer == 'true'
+    needs: publier
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: pages
